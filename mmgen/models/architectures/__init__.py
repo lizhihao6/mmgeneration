@@ -20,6 +20,7 @@ from .stylegan import (MSStyleGAN2Discriminator, MSStyleGANv2Generator,
                        StyleGAN1Discriminator, StyleGAN2Discriminator,
                        StyleGANv1Generator, StyleGANv2Generator)
 from .wgan_gp import WGANGPDiscriminator, WGANGPGenerator
+from .ganISP import inverseISP, HistAwareDiscriminator
 
 __all__ = [
     'DCGANGenerator', 'DCGANDiscriminator', 'EqualizedLR',
@@ -35,5 +36,6 @@ __all__ = [
     'PerceptualLoss', 'WGANGPDiscriminator', 'WGANGPGenerator',
     'LSGANDiscriminator', 'LSGANGenerator', 'ProjDiscriminator',
     'SNGANGenerator', 'BigGANGenerator', 'SNConvModule', 'BigGANDiscriminator',
-    'BigGANDeepGenerator', 'BigGANDeepDiscriminator', 'DenoisingUnet'
+    'BigGANDeepGenerator', 'BigGANDeepDiscriminator', 'DenoisingUnet',
+    'inverseISP', 'HistAwareDiscriminator'
 ]

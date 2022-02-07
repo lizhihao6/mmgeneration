@@ -3,7 +3,8 @@ from .base_translation_model import BaseTranslationModel
 from .cyclegan import CycleGAN
 from .pix2pix import Pix2Pix
 from .static_translation_gan import StaticTranslationGAN
+from .ganISP import ganISP
 
 __all__ = [
-    'Pix2Pix', 'CycleGAN', 'BaseTranslationModel', 'StaticTranslationGAN'
+    'Pix2Pix', 'CycleGAN', 'BaseTranslationModel', 'StaticTranslationGAN', 'ganISP'
 ]

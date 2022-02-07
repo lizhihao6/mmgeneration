@@ -5,7 +5,25 @@ import mmcv
 import torch
 from mmcv.runner import HOOKS, Hook
 from mmcv.runner.dist_utils import master_only
-from torchvision.utils import save_image
+
+import cv2
+import numpy as np
+
+
+def save_image(tensor, path, nrow, padding):
+    # replace torchvision.utils import save_image because of segmentation error
+    img = tensor.detach().cpu().numpy()
+    b, c, h, w = img.shape
+    assert c == 3
+    total_h = h * b + (b-1) * padding
+    _img = np.zeros([total_h, w, 3])
+    start_h = 0
+    for i in range(b):
+        _img[start_h:start_h+h] = img[i].transpose([1, 2, 0])
+        start_h += (h + padding)
+    _img = np.clip(_img, 0, 1) * 255
+    _img = np.round(_img).astype(np.uint8)[:, :, ::-1]
+    cv2.imwrite(path, _img)
 
 
 @HOOKS.register_module('MMGenVisualizationHook')

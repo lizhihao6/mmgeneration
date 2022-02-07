@@ -6,6 +6,7 @@ from .crop import Crop, FixedCrop
 from .formatting import Collect, ImageToTensor, ToTensor
 from .loading import LoadImageFromFile
 from .normalize import Normalize
+from .raw import LoadRAWFromFile, Demosaic, RAWNormalize
 
 __all__ = [
     'LoadImageFromFile',
@@ -22,4 +23,7 @@ __all__ = [
     'NumpyPad',
     'Crop',
     'FixedCrop',
+    'LoadRAWFromFile',
+    'Demosaic',
+    'RAWNormalize'
 ]
