@@ -3,11 +3,15 @@ _base_ = [
     '../_base_/datasets/cityscapes_rgb2iphone_raw_512x512.py',
     '../_base_/default_runtime.py'
 ]
+
+# model setting
 train_cfg = dict(buffer_size=50)
 test_cfg = None
 domain_a = 'raw'
 domain_b = 'rgb'
 model = dict(
+    pretrained='/lzh/Project/mmgeneration/.pretrain/freeze_linear.pth',
+    generator=dict(freeze_flow=False, freeze_linear=False, use_flow=True),
     default_domain=domain_b,
     reachable_domains=[domain_a, domain_b],
     related_domains=[domain_a, domain_b],
@@ -32,11 +36,16 @@ model = dict(
             reduction='mean')
     ])
 
+# dataset setting
+data = dict(
+    samples_per_gpu=1,
+    workers_per_gpu=2)
+
+# learning policy
 optimizer = dict(
     generator=dict(type='AdamW', lr=5e-4),
     discriminators=dict(type='Adam', lr=5e-5, betas=(0.5, 0.999)))
 
-# learning policy
 lr_config = dict(
     policy='Linear', by_epoch=False, target_lr=0, start=10000, interval=400)
 
@@ -45,7 +54,8 @@ custom_hooks = [
     dict(
         type='MMGenVisualizationHook',
         output_dir='training_samples',
-        res_name_list=[f'real_{domain_a}', f'fake_{domain_b}', f'cycle_{domain_a}', f'real_{domain_b}', f'fake_{domain_a}', f'cycle_{domain_b}'],
+        res_name_list=[f'real_{domain_a}', f'fake_{domain_b}', f'cycle_{domain_a}', f'real_{domain_b}',
+                       f'fake_{domain_a}', f'cycle_{domain_b}'],
         rerange=False,
         bgr2rgb=False,
         interval=200)
@@ -54,9 +64,9 @@ custom_hooks = [
 runner = None
 find_unused_parameters = True
 use_ddp_wrapper = True
-total_iters = 20000
+total_iters = 80000
 workflow = [('train', 1)]
-exp_name = 'ganISP_cityscapes_rgb2iphone_raw_without_identity'
+exp_name = 'ganISP_cityscapes_rgb2iphone_raw'
 work_dir = f'./work_dirs/experiments/{exp_name}'
 num_images = 20
 

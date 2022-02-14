@@ -1,14 +1,9 @@
 import math
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 import torch.nn.init as init
 
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 def compute_same_pad(kernel_size, stride):
     if isinstance(kernel_size, int):
@@ -49,10 +44,10 @@ def split_feature(tensor, type="split"):
     C = tensor.size(1)
     if type == "split":
         # return tensor[:, : C // 2, ...], tensor[:, C // 2 :, ...]
-        return tensor[:, :1, ...], tensor[:,1:, ...]
+        return tensor[:, :1, ...], tensor[:, 1:, ...]
     elif type == "cross":
         # return tensor[:, 0::2, ...], tensor[:, 1::2, ...]
-        return tensor[:, 0::2, ...], tensor[:, 1::2, ...] 
+        return tensor[:, 0::2, ...], tensor[:, 1::2, ...]
 
 
 def gaussian_p(mean, logs, x):
@@ -219,14 +214,14 @@ class LinearZeros(nn.Module):
 
 class Conv2d(nn.Module):
     def __init__(
-        self,
-        in_channels,
-        out_channels,
-        kernel_size=(3, 3),
-        stride=(1, 1),
-        padding="same",
-        do_actnorm=True,
-        weight_std=0.05,
+            self,
+            in_channels,
+            out_channels,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            padding="same",
+            do_actnorm=True,
+            weight_std=0.05,
     ):
         super().__init__()
 
@@ -263,13 +258,13 @@ class Conv2d(nn.Module):
 
 class Conv2dZeros(nn.Module):
     def __init__(
-        self,
-        in_channels,
-        out_channels,
-        kernel_size=(3, 3),
-        stride=(1, 1),
-        padding="same",
-        logscale_factor=3,
+            self,
+            in_channels,
+            out_channels,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            padding="same",
+            logscale_factor=3,
     ):
         super().__init__()
 
@@ -291,148 +286,81 @@ class Conv2dZeros(nn.Module):
         return output * torch.exp(self.logs * self.logscale_factor)
 
 
-class Permute2d(nn.Module):
-    def __init__(self, num_channels, shuffle):
-        super().__init__()
-        self.num_channels = num_channels
-        self.indices = torch.arange(self.num_channels - 1, -1, -1, dtype=torch.long)
-        self.indices_inverse = torch.zeros((self.num_channels), dtype=torch.long)
+# class InvertibleConv1x1(nn.Module):
+#     def __init__(self, num_channels, LU_decomposed):
+#         super().__init__()
+#         w_shape = [num_channels, num_channels]
+#         w_init = torch.linalg.qr(torch.randn(*w_shape), 'reduced')[0]
 
-        for i in range(self.num_channels):
-            self.indices_inverse[self.indices[i]] = i
+#         if not LU_decomposed:
+#             self.weight = nn.Parameter(torch.Tensor(w_init))
+#         else:
+#             p, lower, upper = torch.lu_unpack(*torch.lu(w_init))
+#             s = torch.diag(upper)
+#             sign_s = torch.sign(s)
+#             log_s = torch.log(torch.abs(s))
+#             upper = torch.triu(upper, 1)
+#             l_mask = torch.tril(torch.ones(w_shape), -1)
+#             eye = torch.eye(*w_shape)
 
-        if shuffle:
-            self.reset_indices()
+#             self.register_buffer("p", p)
+#             self.register_buffer("sign_s", sign_s)
+#             self.lower = nn.Parameter(lower)
+#             self.log_s = nn.Parameter(log_s)
+#             self.upper = nn.Parameter(upper)
+#             self.l_mask = l_mask
+#             self.eye = eye
 
-    def reset_indices(self):
-        shuffle_idx = torch.randperm(self.indices.shape[0])
-        self.indices = self.indices[shuffle_idx]
+#         self.w_shape = w_shape
+#         self.LU_decomposed = LU_decomposed
 
-        for i in range(self.num_channels):
-            self.indices_inverse[self.indices[i]] = i
+#     def get_weight(self, input, reverse):
+#         b, c, h, w = input.shape
 
-    def forward(self, input, reverse=False):
-        assert len(input.size()) == 4
+#         if not self.LU_decomposed:
+#             dlogdet = torch.slogdet(self.weight)[1] * h * w
+#             if reverse:
+#                 weight = torch.inverse(self.weight)
+#             else:
+#                 weight = self.weight
+#         else:
+#             self.l_mask = self.l_mask.to(input.device)
+#             self.eye = self.eye.to(input.device)
 
-        if not reverse:
-            input = input[:, self.indices, :, :]
-            return input
-        else:
-            return input[:, self.indices_inverse, :, :]
+#             lower = self.lower * self.l_mask + self.eye
 
+#             u = self.upper * self.l_mask.transpose(0, 1).contiguous()
+#             u += torch.diag(self.sign_s * torch.exp(self.log_s))
 
-class Split2d(nn.Module):
-    def __init__(self, num_channels):
-        super().__init__()
-        self.conv = Conv2dZeros(num_channels // 2, num_channels)
+#             dlogdet = torch.sum(self.log_s) * h * w
 
-    def split2d_prior(self, z):
-        h = self.conv(z)
-        return split_feature(h, "cross")
+#             if reverse:
+#                 u_inv = torch.inverse(u)
+#                 l_inv = torch.inverse(lower)
+#                 p_inv = torch.inverse(self.p)
 
-    def forward(self, input, logdet=0.0, reverse=False, temperature=None):
-        if reverse:
-            z1 = input
-            mean, logs = self.split2d_prior(z1)
-            z2 = gaussian_sample(mean, logs, temperature)
-            z = torch.cat((z1, z2), dim=1)
-            return z, logdet
-        else:
-            z1, z2 = split_feature(input, "split")
-            mean, logs = self.split2d_prior(z1)
-            logdet = gaussian_likelihood(mean, logs, z2) + logdet
-            return z1, logdet
+#                 weight = torch.matmul(u_inv, torch.matmul(l_inv, p_inv))
+#             else:
+#                 weight = torch.matmul(self.p, torch.matmul(lower, u))
 
+#         return weight.view(self.w_shape[0], self.w_shape[1], 1, 1), dlogdet
 
-class SqueezeLayer(nn.Module):
-    def __init__(self, factor):
-        super().__init__()
-        self.factor = factor
+#     def forward(self, input, logdet=None, reverse=False):
+#         """
+#         log-det = log|abs(|W|)| * pixels
+#         """
+#         weight, dlogdet = self.get_weight(input, reverse)
 
-    def forward(self, input, logdet=None, reverse=False):
-        if reverse:
-            output = unsqueeze2d(input, self.factor)
-        else:
-            output = squeeze2d(input, self.factor)
-
-        return output, logdet
-
-
-class InvertibleConv1x1(nn.Module):
-    def __init__(self, num_channels, LU_decomposed):
-        super().__init__()
-        w_shape = [num_channels, num_channels]
-        w_init = torch.linalg.qr(torch.randn(*w_shape), 'reduced')[0]
-
-        if not LU_decomposed:
-            self.weight = nn.Parameter(torch.Tensor(w_init))
-        else:
-            p, lower, upper = torch.lu_unpack(*torch.lu(w_init))
-            s = torch.diag(upper)
-            sign_s = torch.sign(s)
-            log_s = torch.log(torch.abs(s))
-            upper = torch.triu(upper, 1)
-            l_mask = torch.tril(torch.ones(w_shape), -1)
-            eye = torch.eye(*w_shape)
-
-            self.register_buffer("p", p)
-            self.register_buffer("sign_s", sign_s)
-            self.lower = nn.Parameter(lower)
-            self.log_s = nn.Parameter(log_s)
-            self.upper = nn.Parameter(upper)
-            self.l_mask = l_mask
-            self.eye = eye
-
-        self.w_shape = w_shape
-        self.LU_decomposed = LU_decomposed
-
-    def get_weight(self, input, reverse):
-        b, c, h, w = input.shape
-
-        if not self.LU_decomposed:
-            dlogdet = torch.slogdet(self.weight)[1] * h * w
-            if reverse:
-                weight = torch.inverse(self.weight)
-            else:
-                weight = self.weight
-        else:
-            self.l_mask = self.l_mask.to(input.device)
-            self.eye = self.eye.to(input.device)
-
-            lower = self.lower * self.l_mask + self.eye
-
-            u = self.upper * self.l_mask.transpose(0, 1).contiguous()
-            u += torch.diag(self.sign_s * torch.exp(self.log_s))
-
-            dlogdet = torch.sum(self.log_s) * h * w
-
-            if reverse:
-                u_inv = torch.inverse(u)
-                l_inv = torch.inverse(lower)
-                p_inv = torch.inverse(self.p)
-
-                weight = torch.matmul(u_inv, torch.matmul(l_inv, p_inv))
-            else:
-                weight = torch.matmul(self.p, torch.matmul(lower, u))
-
-        return weight.view(self.w_shape[0], self.w_shape[1], 1, 1), dlogdet
-
-    def forward(self, input, logdet=None, reverse=False):
-        """
-        log-det = log|abs(|W|)| * pixels
-        """
-        weight, dlogdet = self.get_weight(input, reverse)
-
-        if not reverse:
-            z = F.conv2d(input, weight)
-            if logdet is not None:
-                logdet = logdet + dlogdet
-            return z, logdet
-        else:
-            z = F.conv2d(input, weight)
-            if logdet is not None:
-                logdet = logdet - dlogdet
-            return z, logdet
+#         if not reverse:
+#             z = F.conv2d(input, weight)
+#             if logdet is not None:
+#                 logdet = logdet + dlogdet
+#             return z, logdet
+#         else:
+#             z = F.conv2d(input, weight)
+#             if logdet is not None:
+#                 logdet = logdet - dlogdet
+#             return z, logdet
 
 def initialize_weights(net_l, scale=1):
     if not isinstance(net_l, list):
@@ -493,7 +421,7 @@ class DenseBlock(nn.Module):
             # initialize_weights([self.conv1, self.conv2, self.conv3, self.conv4], 0.1)
         initialize_weights(self.conv3, 0)
         # initialize_weights(self.conv5, 0)
-    
+
     def forward(self, x):
         x1 = self.lrelu(self.conv1(x))
         x2 = self.lrelu(self.conv2(torch.cat((x, x1), 1)))
@@ -518,11 +446,11 @@ class DenseBlock(nn.Module):
 #             nn.ReLU(inplace=False)
 #             # nn.LeakyReLU(negative_slope=0.2, inplace=True)
 #         )
-        
+
 #         if channel_in != channel_out:
 #             self.residual = nn.Conv2d(channel_in, channel_out, 1, 1, 0)
 #             initialize_weights(self.residual, 0)
-    
+
 #     def forward(self, x):
 #         residual = self.residual(x) if hasattr(self, 'residual') else x
 #         x = self.seq(x) + residual
@@ -566,6 +494,7 @@ class ResBlock(nn.Module):
         z = self.root(z)
         return z
 
+
 def subnet(net_structure, init='xavier'):
     def constructor(channel_in, channel_out):
         if net_structure == 'DBNet':
@@ -591,8 +520,8 @@ class InvBlock(nn.Module):
         # channel_num: 3
         # channel_split_num: 1
 
-        self.split_len1 = channel_split_num # 1
-        self.split_len2 = channel_num - channel_split_num # 2 
+        self.split_len1 = channel_split_num  # 1
+        self.split_len2 = channel_num - channel_split_num  # 2
 
         self.clamp = clamp
 
@@ -600,45 +529,47 @@ class InvBlock(nn.Module):
         self.G = subnet_constructor(self.split_len1, self.split_len2)
         self.H = subnet_constructor(self.split_len1, self.split_len2)
 
-        in_channels = 3        
-        self.invconv = InvertibleConv1x1(in_channels, LU_decomposed=True)
-        self.flow_permutation = lambda z, logdet, rev: self.invconv(z, logdet, rev)
-        
-    def forward(self, x, rev=False):
-        if not rev:            
-            # invert1x1conv 
-            x, logdet = self.flow_permutation(x, logdet=0, rev=False) 
-            
-            # split to 1 channel and 2 channel. 
-            x1, x2 = (x.narrow(1, 0, self.split_len1), x.narrow(1, self.split_len1, self.split_len2)) 
+        # in_channels = 3        
+        # self.invconv = InvertibleConv1x1(in_channels, LU_decomposed=True)
+        # self.flow_permutation = lambda z, logdet, rev: self.invconv(z, logdet, rev)
 
-            y1 = x1 + self.F(x2) # 1 channel 
+    def forward(self, x, rev=False):
+        if not rev:
+            # invert1x1conv 
+            # x, logdet = self.flow_permutation(x, logdet=0, rev=False) 
+
+            # split to 1 channel and 2 channel. 
+            x1, x2 = (x.narrow(1, 0, self.split_len1), x.narrow(1, self.split_len1, self.split_len2))
+
+            y1 = x1 + self.F(x2)  # 1 channel
             self.s = self.clamp * (torch.sigmoid(self.H(y1)) * 2 - 1)
-            y2 = x2.mul(torch.exp(self.s)) + self.G(y1) # 2 channel 
+            y2 = x2.mul(torch.exp(self.s)) + self.G(y1)  # 2 channel
             out = torch.cat((y1, y2), 1)
         else:
             # split. 
-            x1, x2 = (x.narrow(1, 0, self.split_len1), x.narrow(1, self.split_len1, self.split_len2)) 
+            x1, x2 = (x.narrow(1, 0, self.split_len1), x.narrow(1, self.split_len1, self.split_len2))
             self.s = self.clamp * (torch.sigmoid(self.H(x1)) * 2 - 1)
-            y2 = (x2 - self.G(x1)).div(torch.exp(self.s)) 
-            y1 = x1 - self.F(y2) 
+            y2 = (x2 - self.G(x1)).div(torch.exp(self.s))
+            y1 = x1 - self.F(y2)
 
-            x = torch.cat((y1, y2), 1)            
+            x = torch.cat((y1, y2), 1)
 
             # inv permutation 
-            out, logdet = self.flow_permutation(x, logdet=0, rev=True)
+            # out, logdet = self.flow_permutation(x, logdet=0, rev=True)
+            out = x
 
         return out
+
 
 class TinyEncoder(nn.Module):
     def __init__(self, in_channels=3, out_channels=3, channnels=64, input_size=128):
         super().__init__()
         self.input_size = input_size
         self.net = torch.nn.Sequential(
-            nn.Conv2d(in_channels*2, 32, 5, 1, 2),
+            nn.Conv2d(in_channels * 2, 32, 5, 1, 2),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
             nn.AvgPool2d(2, 2),
-            
+
             nn.Conv2d(32, channnels, 3, 1, 2),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
             nn.AvgPool2d(2, 2),
@@ -653,17 +584,16 @@ class TinyEncoder(nn.Module):
             nn.Linear(256, out_channels)
         )
 
-
     def forward(self, x):
         assert x.size(2) == self.input_size
-        x = torch.cat([x, x**2], dim=1)
+        x = torch.cat([x, x ** 2], dim=1)
         x = self.net(x)
         x = x.view(x.size(0), -1)
         x = self.linear(x)
         return x
 
-def differentiable_histogram(x, bins=255, min=0.0, max=1.0):
 
+def differentiable_histogram(x, bins=255, min=0.0, max=1.0):
     if len(x.shape) == 4:
         n_samples, n_chns, _, _ = x.shape
     elif len(x.shape) == 2:
@@ -674,11 +604,11 @@ def differentiable_histogram(x, bins=255, min=0.0, max=1.0):
     hist_torch = torch.zeros(n_samples, n_chns, bins).to(x.device)
     delta = (max - min) / bins
 
-    BIN_Table = torch.arange(start=0, end=bins+1, step=1) * delta
+    BIN_Table = torch.arange(start=0, end=bins + 1, step=1) * delta
 
-    for dim in range(1, bins-1, 1):
-        h_r = BIN_Table[dim].item()             # h_r
-        h_r_sub_1 = BIN_Table[dim - 1].item()   # h_(r-1)
+    for dim in range(1, bins - 1, 1):
+        h_r = BIN_Table[dim].item()  # h_r
+        h_r_sub_1 = BIN_Table[dim - 1].item()  # h_(r-1)
         h_r_plus_1 = BIN_Table[dim + 1].item()  # h_(r+1)
 
         mask_sub = ((h_r > x) & (x >= h_r_sub_1)).float()

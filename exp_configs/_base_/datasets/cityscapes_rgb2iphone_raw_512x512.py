@@ -52,7 +52,7 @@ train_pipeline = [
 ]
 
 test_pipeline = [
- dict(
+    dict(
         type='LoadRAWFromFile',
         key=f'img_{domain_a}'),
     dict(
